@@ -105,6 +105,13 @@ interface IMasterCakepie {
         address user_address
     ) external;
 
+    function multiclaimMCake(
+        address[] calldata _stakingTokens,
+        address[][] calldata _rewardTokens,
+        address user_address,
+        uint256 _minRecMCake
+    ) external;
+
     function multiclaimOnBehalf(
         address[] memory _stakingTokens,
         address[][] calldata _rewardTokens,

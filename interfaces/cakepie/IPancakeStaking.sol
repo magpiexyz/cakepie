@@ -93,4 +93,6 @@ interface IPancakeStaking {
         bytes32 _vestingScheduleId,
         address _rewardToken
     ) external;
+
+    function allowedOperator(address _account) external returns (bool);
 }

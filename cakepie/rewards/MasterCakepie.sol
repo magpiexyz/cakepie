@@ -17,6 +17,7 @@ import "../../interfaces/common/IMintableERC20.sol";
 import "../../interfaces/cakepie/IVLCakepie.sol";
 import "../../interfaces/cakepie/IVLCakepieBaseRewarder.sol";
 import { IPancakeV3Helper } from "../../interfaces/cakepie/IPancakeV3Helper.sol";
+import { ICakeMCakeRewardPool } from "../../interfaces/cakepie/ICakeMCakeRewardPool.sol";
 
 /// @title A contract for managing all reward pools
 /// @author Magpie Team
@@ -93,6 +94,8 @@ contract MasterCakepie is
 
     /* ======== mapping added for legacy rewarders ======= */
     mapping(address => address) public legacyRewarders;
+    // Mapping to track if the CAKE rewards of a pool should be converted to MCAKE.
+    mapping(address => bool) public cakeRewardToMcake;
 
     /* ============ Events ============ */
 
@@ -148,6 +151,7 @@ contract MasterCakepie is
     event mCakeSVUpdated(address _newMCakeSV, address _oldMCakeSV);
     event LegacyRewarderSet(address _stakingToken, address _legacyRewarder);
     event PancakeV3HelperSet(address _pancakeV3Helper);
+    event CakeRewardToMCakeUpdated(address _pool, bool _status);
 
     /* ============ Errors ============ */
 
@@ -423,7 +427,7 @@ contract MasterCakepie is
         uint256[] memory _tokenIds,
         bool _withckp
     ) external whenNotPaused {
-        _multiClaim(_stakingTokens, msg.sender, msg.sender, _rewardTokens, _tokenIds, _withckp);
+        _multiClaim(_stakingTokens, msg.sender, msg.sender, _rewardTokens, _tokenIds, _withckp, 0);
     }
 
     /// @notice Claims for each of the pools with specified rewards to claim for each pool
@@ -433,7 +437,18 @@ contract MasterCakepie is
         address _account
     ) external whenNotPaused {
         uint256[] memory noTokenid = new uint256[](0);
-        _multiClaim(_stakingTokens, _account, _account, _rewardTokens, noTokenid, true);
+        _multiClaim(_stakingTokens, _account, _account, _rewardTokens, noTokenid, true, 0);
+    }
+
+    /// @notice Claims for V2 pools only whose CAKE rewards needs to be converted to MCAKE
+    function multiclaimMCake(
+        address[] calldata _stakingTokens,
+        address[][] memory _rewardTokens,
+        address _account,
+        uint256 _minRecMCake
+    ) external whenNotPaused {
+        uint256[] memory noTokenid = new uint256[](0);
+        _multiClaim(_stakingTokens, _account, _account, _rewardTokens, noTokenid, true, _minRecMCake);
     }
 
     /* ============ cakepie receipToken interaction Functions ============ */
@@ -564,7 +579,8 @@ contract MasterCakepie is
         address _receiver,
         address[][] memory _rewardTokens,
         uint256[] memory _tokenIds,
-        bool _withckp
+        bool _withckp,
+        uint256 _minRecMCake
     ) internal nonReentrant {
         uint256 length = _stakingTokens.length;
         if (length != _rewardTokens.length) revert LengthMismatch();
@@ -594,7 +610,7 @@ contract MasterCakepie is
             user.rewardDebt =
                 (user.amount * tokenToPoolInfo[_stakingToken].accCakepiePerShare) /
                 1e12;
-            _claimBaseRewarder(_stakingToken, _user, _receiver, _rewardTokens[i]);
+            _claimBaseRewarder(_stakingToken, _user, _receiver, _rewardTokens[i], _minRecMCake);
         }
 
         if (_tokenIds.length > 0) pancakeV3Helper.harvestRewardAndFeeFor(_receiver, _tokenIds);
@@ -660,15 +676,28 @@ contract MasterCakepie is
         address _stakingToken,
         address _account,
         address _receiver,
-        address[] memory _rewardTokens
+        address[] memory _rewardTokens,
+        uint256 _minRecMCake
     ) internal {
-        IBaseRewardPool rewarder = IBaseRewardPool(tokenToPoolInfo[_stakingToken].rewarder);
-        if (address(rewarder) != address(0)) {
-            if (_rewardTokens.length > 0) {
-                rewarder.getRewards(_account, _receiver, _rewardTokens);
-                // if not specifiying any reward token, just claim them all
-            } else {
-                rewarder.getReward(_account, _receiver);
+        if (cakeRewardToMcake[_stakingToken]) {
+            ICakeMCakeRewardPool rewarder = ICakeMCakeRewardPool(tokenToPoolInfo[_stakingToken].rewarder);
+            if (address(rewarder) != address(0)) {
+                if (_rewardTokens.length > 0) {
+                    rewarder.getRewards(_account, _receiver, _rewardTokens, _minRecMCake);
+                    // if not specifiying any reward token, just claim them all
+                } else {
+                    rewarder.getReward(_account, _receiver, _minRecMCake);
+                }
+            }
+        } else {
+            IBaseRewardPool rewarder = IBaseRewardPool(tokenToPoolInfo[_stakingToken].rewarder);
+            if (address(rewarder) != address(0)) {
+                if (_rewardTokens.length > 0) {
+                    rewarder.getRewards(_account, _receiver, _rewardTokens);
+                    // if not specifiying any reward token, just claim them all
+                } else {
+                    rewarder.getReward(_account, _receiver);
+                }
             }
         }
 
@@ -683,9 +712,14 @@ contract MasterCakepie is
 
     /// only update the reward counting on in base rewarder but not sending them to user
     function _harvestBaseRewarder(address _stakingToken, address _account) internal {
-        IBaseRewardPool rewarder = IBaseRewardPool(tokenToPoolInfo[_stakingToken].rewarder);
-        if (address(rewarder) != address(0)) rewarder.updateFor(_account);
-
+        if (cakeRewardToMcake[_stakingToken]) {
+            ICakeMCakeRewardPool rewarder = ICakeMCakeRewardPool(tokenToPoolInfo[_stakingToken].rewarder);
+            if (address(rewarder) != address(0)) rewarder.updateFor(_account);
+        } else {
+            IBaseRewardPool rewarder = IBaseRewardPool(tokenToPoolInfo[_stakingToken].rewarder);
+            if (address(rewarder) != address(0)) rewarder.updateFor(_account);
+        }
+        
         IBaseRewardPool legacyRewarder = IBaseRewardPool(legacyRewarders[_stakingToken]);
         if (address(legacyRewarder) != address(0))
             legacyRewarder.updateFor(_account);
@@ -984,5 +1018,11 @@ contract MasterCakepie is
         legacyRewarders[_stakingToken] = _legacyRewarder;
 
         emit LegacyRewarderSet(_stakingToken, _legacyRewarder);
+    }
+
+    function setCakeRewardToMCake(address _pool, bool _status) external onlyOwner {
+        cakeRewardToMcake[_pool] = _status;
+
+        emit CakeRewardToMCakeUpdated(_pool, _status);
     }
 }

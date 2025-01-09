@@ -14,6 +14,8 @@ interface IIFOV8 {
     }
 
     function addresses(uint256 index) external view returns (address);
+
+    function totalTokensOffered() external view returns (uint256);
     
     function endTimestamp() external view returns (uint256);
 
@@ -54,7 +56,7 @@ interface IIFOV8 {
     function computeReleasableAmount(bytes32 _vestingScheduleId) external view returns (uint256);
 
     function viewPoolInformation(
-        uint8 _pid
+        uint256 _pid
     )
         external
         view

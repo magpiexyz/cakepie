@@ -93,7 +93,16 @@ contract PancakeV2LPHelper is
         (address pool, , , , , , , ,, ) = pancakeStaking.pools(_pool);
         IPancakeStaking(pancakeStaking).withdrawV2LPFor(msg.sender, _pool, _amount);
 
-        if (_isClaim) _claimRewards(msg.sender, pool);
+        if (_isClaim) _claimRewards(msg.sender, pool, 0);
+
+        emit NewWithdraw(msg.sender, _pool, _amount);
+    }
+
+    function withdrawAndClaimMCake(address _pool, uint256 _amount, bool _isClaim, uint256 _minRecMCake) external {
+        (address pool, , , , , , , ,, ) = pancakeStaking.pools(_pool);
+        IPancakeStaking(pancakeStaking).withdrawV2LPFor(msg.sender, _pool, _amount);
+
+        if (_isClaim) _claimRewards(msg.sender, pool, _minRecMCake);
 
         emit NewWithdraw(msg.sender, _pool, _amount);
     }
@@ -106,12 +115,17 @@ contract PancakeV2LPHelper is
 
     /* ============ Internal Functions ============ */
 
-    function _claimRewards(address _for, address _pool) internal {
+    function _claimRewards(address _for, address _pool, uint256 _minRecMCake) internal {
         address[] memory stakingTokens = new address[](1);
         stakingTokens[0] = _pool;
         address[][] memory rewardTokens = new address[][](1);
-        if (address(masterCakepie) != address(0))
-            IMasterCakepie(masterCakepie).multiclaimFor(stakingTokens, rewardTokens, _for);
+        if (address(masterCakepie) != address(0)) {
+            if (_minRecMCake > 0) {
+                IMasterCakepie(masterCakepie).multiclaimMCake(stakingTokens, rewardTokens, _for, _minRecMCake);
+            } else {
+                IMasterCakepie(masterCakepie).multiclaimFor(stakingTokens, rewardTokens, _for);
+            }
+        }
     }
 
     /* ============ Admin Functions ============ */

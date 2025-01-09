@@ -8,12 +8,14 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import { IMasterCakepie } from "../../interfaces/cakepie/IMasterCakepie.sol";
-import { IBaseRewardPool } from "../../interfaces/cakepie/IBaseRewardPool.sol";
+import { ICakeMCakeRewardPool } from "../../interfaces/cakepie/ICakeMCakeRewardPool.sol";
+import { IConvertor } from "../../interfaces/cakepie/IConvertor.sol";
+import { ISmartCakeConvertor } from "../../interfaces/pancakeswap/ISmartCakeConvertor.sol";
 
-/// @title A contract for managing rewards for a pool
+/// @title A contract for managing rewards for Cake-MCake SS pool
 /// @author Magpie Team
-/// @notice You can use this contract for getting informations about rewards for a specific pools
-contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
+/// @notice You can use this contract for getting informations about rewards for a Cake-MCake SS pool
+contract CakeMCakeRewarder is Ownable, ICakeMCakeRewardPool, ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
     using SafeERC20 for IERC20;
 
@@ -26,6 +28,11 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
     uint256 public immutable receiptTokenDecimals;
 
     address[] public rewardTokens;
+
+    address public cakeToken;
+    address public mCakeToken;
+    address public mCakeConvertor;
+    address public smartCakeConvertor;
 
     struct Reward {
         uint256 rewardPerTokenStored; // will apply a DENOMINATOR to prevent underflow
@@ -56,38 +63,46 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
     );
     event RewardQueuerUpdated(address indexed _manager, bool _allowed);
     event EmergencyWithdrawn(address indexed _to, uint256 _amount);
+    event ConfigSet(
+        address indexed _cake,
+        address indexed _mCake,
+        address indexed _mCakeConvertor,
+        address _smartCakeConvertor
+    );
 
     /* ============ Errors ============ */
 
     error OnlyRewardQueuer();
-    error OnlyMasterRadpie();
+    error OnlyMasterCakepie();
     error NotAllowZeroAddress();
     error MustBeRewardToken();
+    error minReceivedNotMet();
+    error RewardTokenIsNull();
 
     /* ============ Constructor ============ */
 
     constructor(
         address _receiptToken,
-        address _rewardToken,
-        address _masterRadpie,
+        address _rewardToken, // _rewardToken must be CAKE token.
+        address _masterCakepie,
         address _rewardQueuer
     ) {
         if (
             _receiptToken == address(0) ||
-            _masterRadpie == address(0) ||
+            _masterCakepie == address(0) ||
             _rewardQueuer == address(0)
         ) revert NotAllowZeroAddress();
 
         receiptToken = _receiptToken;
         receiptTokenDecimals = IERC20Metadata(receiptToken).decimals();
-        operator = _masterRadpie;
+        operator = _masterCakepie;
 
-        if (_rewardToken != address(0)) {
-            rewards[_rewardToken] = Reward({ rewardPerTokenStored: 0, queuedRewards: 0 });
-            rewardTokens.push(_rewardToken);
+        if (_rewardToken == address(0)) revert RewardTokenIsNull();
 
-            isRewardToken[_rewardToken] = true;
-        }
+        rewards[_rewardToken] = Reward({ rewardPerTokenStored: 0, queuedRewards: 0 });
+        rewardTokens.push(_rewardToken);
+
+        isRewardToken[_rewardToken] = true;
 
         rewardQueuers[_rewardQueuer] = true;
     }
@@ -99,8 +114,8 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
         _;
     }
 
-    modifier onlyMasterRadpie() {
-        if (msg.sender != operator) revert OnlyMasterRadpie();
+    modifier onlyMasterCakepie() {
+        if (msg.sender != operator) revert OnlyMasterCakepie();
         _;
     }
 
@@ -202,15 +217,16 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
 
     function getReward(
         address _account,
-        address _receiver
-    ) public nonReentrant onlyMasterRadpie updateReward(_account) returns (bool) {
+        address _receiver,
+        uint256 _minRecMCake // only rewardToken allowed is CAKE which will be converted to MCAKE.
+    ) public nonReentrant onlyMasterCakepie updateReward(_account) returns (bool) {
         uint256 length = rewardTokens.length;
 
         for (uint256 index = 0; index < length; ++index) {
             address rewardToken = rewardTokens[index];
             uint256 reward = userInfos[rewardToken][_account].userRewards; // updated during updateReward modifier
             if (reward > 0) {
-                _sendReward(rewardToken, _account, _receiver, reward);
+                _sendReward(rewardToken, _account, _receiver, reward, _minRecMCake);
             }
         }
 
@@ -220,14 +236,15 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
     function getRewards(
         address _account,
         address _receiver,
-        address[] memory _rewardTokens
-    ) external override nonReentrant onlyMasterRadpie updateRewards(_account, _rewardTokens) {
+        address[] memory _rewardTokens,
+        uint256 _minRecMCake // only rewardToken allowed is CAKE which will be converted to MCAKE.
+    ) external override nonReentrant onlyMasterCakepie updateRewards(_account, _rewardTokens) {
         uint256 length = _rewardTokens.length;
         for (uint256 index = 0; index < length; ++index) {
             address rewardToken = _rewardTokens[index];
             uint256 reward = userInfos[rewardToken][_account].userRewards; // updated during updateReward modifier
             if (reward > 0) {
-                _sendReward(rewardToken, _account, _receiver, reward);
+                _sendReward(rewardToken, _account, _receiver, reward, _minRecMCake);
             }
         }
     }
@@ -249,6 +266,20 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
         emit RewardQueuerUpdated(_rewardManager, rewardQueuers[_rewardManager]);
     }
 
+    function config(
+        address _cakeToken,
+        address _mCakeToken,
+        address _smartCakeConvertor,
+        address _mCakeConvertor
+    ) external onlyOwner {
+        cakeToken = _cakeToken;
+        mCakeToken = _mCakeToken;
+        mCakeConvertor = _mCakeConvertor;
+        smartCakeConvertor = _smartCakeConvertor;
+
+        emit ConfigSet(cakeToken, mCakeToken, mCakeConvertor, smartCakeConvertor);
+    }
+
     /// @notice Sends new rewards to be distributed to the users staking. Only callable by manager
     /// @param _amountReward Amount of reward token to be distributed
     /// @param _rewardToken Address reward token
@@ -256,17 +287,13 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
         uint256 _amountReward,
         address _rewardToken
     ) external override nonReentrant onlyRewardQueuer returns (bool) {
-        if (!isRewardToken[_rewardToken]) {
-            rewards[_rewardToken] = Reward({ rewardPerTokenStored: 0, queuedRewards: 0 });
-            rewardTokens.push(_rewardToken);
-            isRewardToken[_rewardToken] = true;
-        }
+        if (!isRewardToken[_rewardToken]) revert MustBeRewardToken();
 
         _provisionReward(_amountReward, _rewardToken);
         return true;
     }
 
-    function emergencyWithdraw(address _rewardToken, address _to) external onlyMasterRadpie {
+    function emergencyWithdraw(address _rewardToken, address _to) external onlyMasterCakepie {
         uint256 amount = IERC20(_rewardToken).balanceOf(address(this));
         IERC20(_rewardToken).safeTransfer(_to, amount);
         emit EmergencyWithdrawn(_to, amount);
@@ -306,14 +333,19 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
     }
 
     function _sendReward(
-        address _rewardToken,
+        address _cakeToken,
         address _account,
         address _receiver,
-        uint256 _amount
+        uint256 _amount,
+        uint256 _minRecMCake
     ) internal {
-        userInfos[_rewardToken][_account].userRewards = 0;
-        IERC20(_rewardToken).safeTransfer(_receiver, _amount);
-        emit RewardPaid(_account, _receiver, _amount, _rewardToken);
+        userInfos[_cakeToken][_account].userRewards = 0;
+        uint256 mCakeReward = _convertToMCake(_amount);
+        if (mCakeReward < _minRecMCake)
+            revert minReceivedNotMet();
+
+        IERC20(mCakeToken).safeTransfer(_receiver, _amount);
+        emit RewardPaid(_account, _receiver, _amount, _cakeToken);
     }
 
     function _updateFor(address _account) internal {
@@ -327,5 +359,19 @@ contract BaseRewardPoolV3 is Ownable, IBaseRewardPool, ReentrancyGuard {
             userInfo.userRewards = earned(_account, rewardToken);
             userInfo.userRewardPerTokenPaid = rewardPerToken(rewardToken);
         }
+    }
+
+    function _convertToMCake(uint256 _amount) internal returns (uint256) {
+        uint256 beforeBalance = IERC20(mCakeToken).balanceOf(address(this));
+
+        if (smartCakeConvertor != address(0)) {
+            IERC20(cakeToken).safeApprove(smartCakeConvertor,_amount);
+            ISmartCakeConvertor(smartCakeConvertor).smartConvert(_amount, 0);
+        } else if (mCakeConvertor != address(0)) {
+            IERC20(cakeToken).safeApprove(address(mCakeConvertor), _amount);
+            IConvertor(mCakeConvertor).convert(address(this), _amount, 0);
+        }
+
+        return IERC20(mCakeToken).balanceOf(address(this)) - beforeBalance;
     }
 }

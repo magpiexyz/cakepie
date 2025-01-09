@@ -376,6 +376,11 @@ contract CakepieReaderSideChain is Initializable, OwnableUpgradeable {
                 account,
                 false
             );
+            cakepiePool.accountInfo.legacyRewardInfo = getRewardInfo(
+                cakepiePool.poolAddress,
+                account,
+                true
+            );
         }
 
         return cakepiePool;

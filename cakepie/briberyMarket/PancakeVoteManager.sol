@@ -94,6 +94,7 @@ contract PancakeVoteManager is
         int256 _weight
     );
     event UpdateOperatorStatus(address indexed _user, bool _status);
+    event UpdateGaugeVoting(address indexed _oldVoter, address indexed _newVoter);
 
     /* ============ Errors ============ */
 
@@ -104,6 +105,7 @@ contract PancakeVoteManager is
     error OnlyBribeManager();
     error OnlyOperator();
     error OnlyMainChain();
+    error InvalidVoter();
 
     /* ============ Constructor ============ */
 
@@ -367,5 +369,12 @@ contract PancakeVoteManager is
         allowedOperator[_user] = _allowed;
 
         emit UpdateOperatorStatus(_user, _allowed);
+    }
+
+    function updateGaugeVoting(address _voter) external onlyOwner {
+        if (_voter == address(0)) revert InvalidVoter();
+
+        emit UpdateGaugeVoting(address(voter), _voter);
+        voter = IGaugeVoting(_voter);
     }
 }

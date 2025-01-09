@@ -6,9 +6,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { StreamRewarder } from "./StreamRewarder.sol";
 import {IMasterCakepie} from "../../interfaces/cakepie/IMasterCakepie.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "../../interfaces/cakepie/ILocker.sol";
-contract vlStreamRewarder is StreamRewarder, ReentrancyGuardUpgradeable{
+contract vlStreamRewarder is StreamRewarder {
     using SafeERC20 for IERC20;
     
     /* ================ State Variables ==================== */

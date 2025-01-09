@@ -233,9 +233,9 @@ contract CakepieReader is Initializable, OwnableUpgradeable {
 
     /* ============ State Variables ============ */
 
-    // function __CakepieReader_init() public initializer {
-    //     __Ownable_init();
-    // }
+    function __CakepieReader_init() public initializer {
+        __Ownable_init();
+    }
 
     /* ============ External Getters ============ */
 
@@ -376,6 +376,7 @@ contract CakepieReader is Initializable, OwnableUpgradeable {
             else
             cakepiePool.accountInfo = getV2LikeAccountInfo(cakepiePool, account);
             cakepiePool.accountInfo.rewardInfo = getRewardInfo(cakepiePool.poolAddress, account, false);
+            cakepiePool.accountInfo.legacyRewardInfo = getRewardInfo(cakepiePool.poolAddress, account, true);
         }
 
         return cakepiePool;
@@ -589,32 +590,32 @@ contract CakepieReader is Initializable, OwnableUpgradeable {
         return vlCakepieLockInfo;
     }    
 
-    // function config(
-    //     address _pancakeStaking,
-    //     address _masterChefV3,
-    //     address _mCakeConvertor,
-    //     uint16 _totalpfee
-    // ) external onlyOwner {
-    //     pancakeStaking = IPancakeStakingReader(_pancakeStaking);
-    //     pancakeV2LPHelper = pancakeStaking.pancakeV2LPHelper();
-    //     pancakeV3Helper = IPancakeV3HelperReader(pancakeStaking.pancakeV3Helper());
-    //     pancakeAMLHelper = pancakeStaking.pancakeAMLHelper();
-    //     rewardDistributor = IRewardDistributor(pancakeStaking.rewardDistributor());
-    //     cake = pancakeStaking.CAKE();
-    //     masterCakepie = IMasterCakepieReader(pancakeStaking.masterCakepie());
-    //     masterChefV3 = IMasterChefV3(_masterChefV3);
-    //     mCakeConvertor = _mCakeConvertor;
-    //     mCake = IMCakeConvertorReader(_mCakeConvertor).mCake();
-    //     totalLpFee = _totalpfee;
-    //     nonFungiblePositionManager = pancakeV3Helper.nonfungiblePositionManager();
-    //     WETHToken = masterChefV3.WETH();
-    //     v3Factory = IPancakeV3PoolImmutables(nonFungiblePositionManager).factory();
-    //     v3FARM_BOOSTER = masterChefV3.FARM_BOOSTER();
-    // }
+    function config(
+        address _pancakeStaking,
+        address _masterChefV3,
+        address _mCakeConvertor,
+        uint16 _totalpfee
+    ) external onlyOwner {
+        pancakeStaking = IPancakeStakingReader(_pancakeStaking);
+        pancakeV2LPHelper = pancakeStaking.pancakeV2LPHelper();
+        pancakeV3Helper = IPancakeV3HelperReader(pancakeStaking.pancakeV3Helper());
+        pancakeAMLHelper = pancakeStaking.pancakeAMLHelper();
+        rewardDistributor = IRewardDistributor(pancakeStaking.rewardDistributor());
+        cake = pancakeStaking.CAKE();
+        masterCakepie = IMasterCakepieReader(pancakeStaking.masterCakepie());
+        masterChefV3 = IMasterChefV3(_masterChefV3);
+        mCakeConvertor = _mCakeConvertor;
+        mCake = IMCakeConvertorReader(_mCakeConvertor).mCake();
+        totalLpFee = _totalpfee;
+        nonFungiblePositionManager = pancakeV3Helper.nonfungiblePositionManager();
+        WETHToken = masterChefV3.WETH();
+        v3Factory = IPancakeV3PoolImmutables(nonFungiblePositionManager).factory();
+        v3FARM_BOOSTER = masterChefV3.FARM_BOOSTER();
+    }
 
-    // function setVLCKP(address _vlCKP) external onlyOwner {
-    //     vlCKP = _vlCKP;
-    // }
+    function setVLCKP(address _vlCKP) external onlyOwner {
+        vlCKP = _vlCKP;
+    }
 
     function tokenToPool(uint256 tokenId) public view returns (address) {
         address factory = IPancakeV3PoolImmutables(nonFungiblePositionManager).factory();
@@ -749,11 +750,11 @@ contract CakepieReader is Initializable, OwnableUpgradeable {
         return position;
     }
 
-    // function setMCakeSV(address _mCakeSV) external onlyOwner {
-    //     mCakeSV = _mCakeSV;
-    // }
+    function setMCakeSV(address _mCakeSV) external onlyOwner {
+        mCakeSV = _mCakeSV;
+    }
 
-    // function setCakepieOFT(address _cakepieOFT) external onlyOwner {
-    //     cakepieOFT = _cakepieOFT;
-    // }
+    function setCakepieOFT(address _cakepieOFT) external onlyOwner {
+        cakepieOFT = _cakepieOFT;
+    }
 }

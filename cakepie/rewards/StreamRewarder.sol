@@ -7,9 +7,10 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {IMasterCakepie} from "../../interfaces/cakepie/IMasterCakepie.sol";
 
-contract StreamRewarder is  Initializable, OwnableUpgradeable {
+contract StreamRewarder is  Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
 
 
@@ -182,30 +183,16 @@ contract StreamRewarder is  Initializable, OwnableUpgradeable {
 
     /* ================ External Functions =================== */
 
-    function updateFor(address _account) public{
-
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
-            address rewardToken = rewardTokens[i];
-            Reward storage reward = rewards[rewardToken];
-            reward.rewardPerTokenStored = rewardPerToken(rewardToken);
-            reward.lastUpdateTime = lastTimeRewardApplicable(rewardToken);
-
-            UserReward storage userReward = userRewards[rewardToken][_account];
-            userReward.rewards = earned(_account, rewardToken);
-            userReward.userRewardPerTokenPaid = rewards[rewardToken]
-                .rewardPerTokenStored;
-        }
-
-        userAmountTime[_account] = getUserAmountTime(_account);
-        userLastTime[_account] = block.timestamp;
+    function updateFor(address _account) public nonReentrant {
+        _updateFor(_account);
     }
 
     function getRewards(
         address _account,
         address _receiver,
         address[] memory _rewardTokens
-    ) public onlyMasterCakepie{
-        updateFor(_account);
+    ) public nonReentrant onlyMasterCakepie {
+        _updateFor(_account);
 
         for (uint256 index = 0; index <  _rewardTokens.length; ++index) {
             address rewardToken = _rewardTokens[index];
@@ -216,8 +203,8 @@ contract StreamRewarder is  Initializable, OwnableUpgradeable {
     function getReward(
         address _account,
         address _receiver
-    ) external onlyMasterCakepie returns(bool) {
-        updateFor(_account);
+    ) external nonReentrant onlyMasterCakepie returns(bool) {
+        _updateFor(_account);
 
         for (uint256 index = 0; index <  rewardTokens.length; ++index) {
             address rewardToken = rewardTokens[index];
@@ -226,7 +213,7 @@ contract StreamRewarder is  Initializable, OwnableUpgradeable {
         return true;
     }
 
-    function donateRewards(address _rewardToken, uint256 _rewards) external {
+    function donateRewards(address _rewardToken, uint256 _rewards) external nonReentrant {
         if(!isRewardToken[_rewardToken])
             revert InvalidToken();
 
@@ -238,6 +225,7 @@ contract StreamRewarder is  Initializable, OwnableUpgradeable {
 
     function queueNewRewards(uint256 _rewards, address _rewardToken) 
         external 
+        nonReentrant
         onlyRewardQueuer  
         returns (bool) 
     {
@@ -302,6 +290,23 @@ contract StreamRewarder is  Initializable, OwnableUpgradeable {
             emit RewardPaid(_account, _receiver, reward, _rewardToken);
         }
 
+    }
+
+    function _updateFor(address _account) internal {
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            address rewardToken = rewardTokens[i];
+            Reward storage reward = rewards[rewardToken];
+            reward.rewardPerTokenStored = rewardPerToken(rewardToken);
+            reward.lastUpdateTime = lastTimeRewardApplicable(rewardToken);
+
+            UserReward storage userReward = userRewards[rewardToken][_account];
+            userReward.rewards = earned(_account, rewardToken);
+            userReward.userRewardPerTokenPaid = rewards[rewardToken]
+                .rewardPerTokenStored;
+        }
+
+        userAmountTime[_account] = getUserAmountTime(_account);
+        userLastTime[_account] = block.timestamp;
     }
 
     /* ======================== Admin Functions ===================================== */
